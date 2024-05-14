@@ -380,75 +380,59 @@ fn main() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn single_integer() {
-        let lexer = Lexer::new(String::from("3"));
+    // Helpers
+    fn interpret(input: String) -> i64 {
+        let lexer = Lexer::new(input);
         let parser = Parser::new(lexer);
         let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        interpreter.interpret()
+    }
+
+    #[test]
+    fn single_integer() {
+        let result = interpret(String::from("3"));
         assert_eq!(result, 3);
     }
 
     #[test]
     fn same_operators() {
-        let lexer = Lexer::new(String::from("5 + 10 + 25"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("5 + 10 + 25"));
         assert_eq!(result, 40);
     }
 
     #[test]
     fn right_precedence() {
-        let lexer = Lexer::new(String::from("2 + 7 * 4"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("2 + 7 * 4"));
         assert_eq!(result, 30);
     }
 
     #[test]
     fn multiple_operators() {
-        let lexer = Lexer::new(String::from("14 + 2 * 3 - 6 / 2"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("14 + 2 * 3 - 6 / 2"));
         assert_eq!(result, 17);
     }
 
     #[test]
     fn handle_parens() {
-        let lexer = Lexer::new(String::from("7 + 3 * (10 / (12 / (3 + 1) - 1))"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("7 + 3 * (10 / (12 / (3 + 1) - 1))"));
         assert_eq!(result, 22);
     }
 
     #[test]
     fn unary_op_minus() {
-        let lexer = Lexer::new(String::from("-3"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("-3"));
         assert_eq!(result, -3);
     }
 
     #[test]
     fn unary_op_minus_repetitive() {
-        let lexer = Lexer::new(String::from("5---2"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("5---2"));
         assert_eq!(result, 3);
     }
 
     #[test]
     fn unary_op_with_parens() {
-        let lexer = Lexer::new(String::from("5---+-(3 + 4)"));
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
+        let result = interpret(String::from("5---+-(3 + 4)"));
         assert_eq!(result, 12);
     }
 }
