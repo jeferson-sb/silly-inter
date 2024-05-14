@@ -138,6 +138,7 @@ impl Lexer {
 #[derive(Debug)]
 enum AST {
     BinOp(Box<BinOp>),
+    UnaryOp(Box<UnaryOp>),
     Number(Number),
 }
 
@@ -153,6 +154,13 @@ struct BinOp {
 struct Number {
     token: Token,
     value: i64,
+}
+
+// Unary
+#[derive(Debug)]
+struct UnaryOp {
+    op: Token,
+    expr: Box<AST>,
 }
 
 /*
@@ -191,6 +199,20 @@ impl Parser {
     fn factor(&mut self) -> AST {
         let token = self.current_token.clone();
         match token.token_type {
+            TokenType::PLUS => {
+                self.eat(TokenType::PLUS);
+                AST::UnaryOp(Box::new(UnaryOp {
+                    op: token,
+                    expr: Box::new(self.factor()),
+                }))
+            }
+            TokenType::MINUS => {
+                self.eat(TokenType::MINUS);
+                AST::UnaryOp(Box::new(UnaryOp {
+                    op: token,
+                    expr: Box::new(self.factor()),
+                }))
+            }
             TokenType::INTEGER => {
                 self.eat(TokenType::INTEGER);
                 AST::Number(Number {
@@ -298,6 +320,16 @@ impl Interpreter {
         }
     }
 
+    fn visit_unaryop(&mut self, node: &UnaryOp) -> i64 {
+        let expr_val = self.visit(&node.expr);
+
+        match node.op.token_type {
+            TokenType::PLUS => expr_val,
+            TokenType::MINUS => -expr_val,
+            _ => panic!("Invalid operator"),
+        }
+    }
+
     fn visit_num(&self, node: &Number) -> i64 {
         node.value
     }
@@ -307,6 +339,7 @@ impl NodeVisitor for Interpreter {
     fn visit(&mut self, node: &AST) -> i64 {
         match node {
             AST::BinOp(bin_op) => self.visit_binop(bin_op),
+            AST::UnaryOp(unary_op) => self.visit_unaryop(unary_op),
             AST::Number(num) => self.visit_num(num),
         }
     }
@@ -390,5 +423,32 @@ mod tests {
         let mut interpreter = Interpreter::new(parser);
         let result = interpreter.interpret();
         assert_eq!(result, 22);
+    }
+
+    #[test]
+    fn unary_op_minus() {
+        let lexer = Lexer::new(String::from("-3"));
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
+        assert_eq!(result, -3);
+    }
+
+    #[test]
+    fn unary_op_minus_repetitive() {
+        let lexer = Lexer::new(String::from("5---2"));
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
+        assert_eq!(result, 3);
+    }
+
+    #[test]
+    fn unary_op_with_parens() {
+        let lexer = Lexer::new(String::from("5---+-(3 + 4)"));
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
+        assert_eq!(result, 12);
     }
 }
