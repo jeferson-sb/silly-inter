@@ -1,25 +1,38 @@
 use std::io::{self, Write};
 
+// Tokens
 static LPAREN: char = '(';
 static RPAREN: char = ')';
-
 static PLUS: char = '+';
 static MINUS: char = '-';
 static MUL: char = '*';
 static DIV: char = '/';
 
 #[derive(Debug, PartialEq, Clone)]
-enum Token {
-    Integer(i32),
-    Plus,
-    Minus,
-    Mul,
-    Div,
+enum TokenType {
+    INTEGER,
+    PLUS,
+    MINUS,
+    MUL,
+    DIV,
     LPAREN,
     RPAREN,
     EOF,
 }
 
+#[derive(Debug, Clone)]
+struct Token {
+    token_type: TokenType,
+    value: Option<String>,
+}
+
+impl Token {
+    fn new(token_type: TokenType, value: Option<String>) -> Self {
+        Token { token_type, value }
+    }
+}
+
+// Lexer
 struct Lexer {
     text: String,
     pos: usize,
@@ -56,7 +69,7 @@ impl Lexer {
     }
 
     // Return a integer consumed from the input.
-    fn integer(&mut self) -> i32 {
+    fn integer(&mut self) -> String {
         let mut result = String::new();
         while let Some(current_char) = self.current_char {
             if !current_char.is_digit(10) {
@@ -66,10 +79,7 @@ impl Lexer {
             self.advance();
         }
 
-        match result.parse::<i32>() {
-            Ok(value) => value,
-            Err(_) => panic!("Error parsing integer"),
-        }
+        result
     }
 
     /*
@@ -86,82 +96,113 @@ impl Lexer {
             }
 
             if current_char.is_digit(10) {
-                return Token::Integer(self.integer());
+                return Token::new(TokenType::INTEGER, Some(self.integer()));
             }
 
             if current_char == PLUS {
                 self.advance();
-                return Token::Plus;
+                return Token::new(TokenType::PLUS, Some(current_char.to_string()));
             }
 
             if current_char == MINUS {
                 self.advance();
-                return Token::Minus;
+                return Token::new(TokenType::MINUS, Some(current_char.to_string()));
             }
 
             if current_char == MUL {
                 self.advance();
-                return Token::Mul;
+                return Token::new(TokenType::MUL, Some(current_char.to_string()));
             }
 
             if current_char == DIV {
                 self.advance();
-                return Token::Div;
+                return Token::new(TokenType::DIV, Some(current_char.to_string()));
             }
 
             if current_char == LPAREN {
                 self.advance();
-                return Token::LPAREN;
+                return Token::new(TokenType::LPAREN, Some(current_char.to_string()));
             }
 
             if current_char == RPAREN {
                 self.advance();
-                return Token::RPAREN;
+                return Token::new(TokenType::RPAREN, Some(current_char.to_string()));
             }
         }
 
-        Token::EOF
+        Token::new(TokenType::EOF, None)
     }
 }
 
+// AST
+#[derive(Debug)]
+enum AST {
+    BinOp(Box<BinOp>),
+    Number(Number),
+}
+
+// Binary operation
+#[derive(Debug)]
+struct BinOp {
+    left: Box<AST>,
+    op: Token,
+    right: Box<AST>,
+}
+
+#[derive(Debug)]
+struct Number {
+    token: Token,
+    value: i64,
+}
+
 /*
-   Parser / Interpreter
-   Compare current token type with a given token and proceed to the next
+   Parser
+   The parser will hold a lexer and its current token
 */
-struct Interpreter {
+struct Parser {
     lexer: Lexer,
     current_token: Token,
 }
 
-impl Interpreter {
+impl Parser {
     fn new(mut lexer: Lexer) -> Self {
         let current_token = lexer.get_next_token();
-        Interpreter {
+        Parser {
             lexer,
             current_token,
         }
     }
 
-    fn eat(&mut self, token_type: Token) {
-        if self.current_token == token_type {
+    fn syntax_error(&self) {
+        panic!("Invalid syntax");
+    }
+
+    // Compare current token type with a given token and proceed to the next
+    fn eat(&mut self, token_type: TokenType) {
+        if self.current_token.token_type == token_type {
             self.current_token = self.lexer.get_next_token();
         } else {
-            panic!("invalid syntax");
+            self.syntax_error();
         }
     }
 
+    // Grammar rules
     // Parse a factor (integer)
-    fn factor(&mut self) -> i32 {
-        match self.current_token {
-            Token::Integer(value) => {
-                self.eat(Token::Integer(value));
-                value
+    fn factor(&mut self) -> AST {
+        let token = self.current_token.clone();
+        match token.token_type {
+            TokenType::INTEGER => {
+                self.eat(TokenType::INTEGER);
+                AST::Number(Number {
+                    token: token.clone(),
+                    value: token.value.unwrap().parse::<i64>().unwrap(),
+                })
             }
-            Token::LPAREN => {
-                self.eat(Token::LPAREN);
-                let result = self.expr();
-                self.eat(Token::RPAREN);
-                result
+            TokenType::LPAREN => {
+                self.eat(TokenType::LPAREN);
+                let node = self.expr();
+                self.eat(TokenType::RPAREN);
+                node
             }
             _ => panic!("Invalid syntax"),
         }
@@ -170,23 +211,26 @@ impl Interpreter {
     /*
         term : factor((MUL|DIV) factor)*
     */
-    fn term(&mut self) -> i32 {
-        let mut result = self.factor();
+    fn term(&mut self) -> AST {
+        let mut node = self.factor();
 
-        while matches!(self.current_token, Token::Mul | Token::Div) {
-            match self.current_token {
-                Token::Mul => {
-                    self.eat(Token::Mul);
-                    result *= self.factor();
-                }
-                Token::Div => {
-                    self.eat(Token::Div);
-                    result /= self.factor();
-                }
-                _ => panic!("Invalid syntax"),
+        while self.current_token.token_type == TokenType::MUL
+            || self.current_token.token_type == TokenType::DIV
+        {
+            let token = self.current_token.clone();
+            if token.token_type == TokenType::MUL {
+                self.eat(TokenType::MUL);
+            } else if token.token_type == TokenType::DIV {
+                self.eat(TokenType::DIV);
             }
+            node = AST::BinOp(Box::new(BinOp {
+                left: Box::new(node),
+                op: token,
+                right: Box::new(self.factor()),
+            }));
         }
-        result
+
+        node
     }
 
     /*
@@ -194,23 +238,77 @@ impl Interpreter {
         expr -> INTEGER PLUS INTEGER
         expr -> INTEGER MINUS INTEGER
     */
-    fn expr(&mut self) -> i32 {
-        let mut result = self.term();
+    fn expr(&mut self) -> AST {
+        let mut node = self.term();
 
-        while matches!(self.current_token, Token::Minus | Token::Plus) {
-            match self.current_token {
-                Token::Plus => {
-                    self.eat(Token::Plus);
-                    result += self.term();
-                }
-                Token::Minus => {
-                    self.eat(Token::Minus);
-                    result -= self.term();
-                }
-                _ => panic!("Invalid syntax"),
+        while self.current_token.token_type == TokenType::PLUS
+            || self.current_token.token_type == TokenType::MINUS
+        {
+            let token = self.current_token.clone();
+            if token.token_type == TokenType::PLUS {
+                self.eat(TokenType::PLUS);
+            } else if token.token_type == TokenType::MINUS {
+                self.eat(TokenType::MINUS);
             }
+            node = AST::BinOp(Box::new(BinOp {
+                left: Box::new(node),
+                op: token,
+                right: Box::new(self.term()),
+            }));
         }
-        result
+
+        node
+    }
+
+    fn parse(&mut self) -> AST {
+        self.expr()
+    }
+}
+
+// NodeVisitor
+trait NodeVisitor {
+    fn visit(&mut self, node: &AST) -> i64;
+}
+
+// Interpreter
+struct Interpreter {
+    parser: Parser,
+}
+
+impl Interpreter {
+    fn new(parser: Parser) -> Self {
+        Interpreter { parser }
+    }
+
+    fn interpret(&mut self) -> i64 {
+        let tree = self.parser.parse();
+        self.visit(&tree)
+    }
+
+    fn visit_binop(&mut self, node: &BinOp) -> i64 {
+        let left_val = self.visit(&node.left);
+        let right_val = self.visit(&node.right);
+
+        match node.op.token_type {
+            TokenType::PLUS => left_val + right_val,
+            TokenType::MINUS => left_val - right_val,
+            TokenType::MUL => left_val * right_val,
+            TokenType::DIV => left_val / right_val,
+            _ => panic!("Invalid operator"),
+        }
+    }
+
+    fn visit_num(&self, node: &Number) -> i64 {
+        node.value
+    }
+}
+
+impl NodeVisitor for Interpreter {
+    fn visit(&mut self, node: &AST) -> i64 {
+        match node {
+            AST::BinOp(bin_op) => self.visit_binop(bin_op),
+            AST::Number(num) => self.visit_num(num),
+        }
     }
 }
 
@@ -237,8 +335,9 @@ fn main() {
 
         // Interpret the line
         let lexer = Lexer::new(input);
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
 
         // Output result
         println!("{:?}", result);
@@ -251,40 +350,45 @@ mod tests {
     #[test]
     fn single_integer() {
         let lexer = Lexer::new(String::from("3"));
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
         assert_eq!(result, 3);
     }
 
     #[test]
     fn same_operators() {
         let lexer = Lexer::new(String::from("5 + 10 + 25"));
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
         assert_eq!(result, 40);
     }
 
     #[test]
     fn right_precedence() {
         let lexer = Lexer::new(String::from("2 + 7 * 4"));
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
         assert_eq!(result, 30);
     }
 
     #[test]
     fn multiple_operators() {
         let lexer = Lexer::new(String::from("14 + 2 * 3 - 6 / 2"));
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
         assert_eq!(result, 17);
     }
 
     #[test]
     fn handle_parens() {
         let lexer = Lexer::new(String::from("7 + 3 * (10 / (12 / (3 + 1) - 1))"));
-        let mut interpreter = Interpreter::new(lexer);
-        let result = interpreter.expr();
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        let result = interpreter.interpret();
         assert_eq!(result, 22);
     }
 }
