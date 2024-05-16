@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::collections::HashMap;
 
 // Tokens
 static LPAREN: char = '(';
@@ -17,10 +17,16 @@ enum TokenType {
     DIV,
     LPAREN,
     RPAREN,
+    BEGIN,
+    END,
+    DOT,
+    ID,
+    ASSIGN,
+    SEMI,
     EOF,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Token {
     token_type: TokenType,
     value: Option<String>,
@@ -37,15 +43,27 @@ struct Lexer {
     text: String,
     pos: usize,
     current_char: Option<char>,
+    reserved: HashMap<String, Token>,
 }
 
 impl Lexer {
     fn new(text: String) -> Self {
-        Lexer {
+        let mut lexer = Lexer {
             text: text.clone(),
             pos: 0,
             current_char: text.chars().nth(0),
-        }
+            reserved: HashMap::new(),
+        };
+        lexer.current_char = lexer.text.chars().nth(lexer.pos);
+        lexer.reserved.insert(
+            "BEGIN".to_string(),
+            Token::new(TokenType::BEGIN, Some("BEGIN".to_string())),
+        );
+        lexer.reserved.insert(
+            "END".to_string(),
+            Token::new(TokenType::END, Some("END".to_string())),
+        );
+        lexer
     }
 
     // Go to the next token
@@ -82,6 +100,32 @@ impl Lexer {
         result
     }
 
+    fn id(&mut self) -> Token {
+        let mut result = String::new();
+        while let Some(char) = self.current_char {
+            if !char.is_alphanumeric() {
+                break;
+            }
+            result.push(char);
+            self.advance();
+        }
+
+        if let Some(token) = self.reserved.get(&result.to_uppercase()) {
+            token.clone()
+        } else {
+            Token::new(TokenType::ID, Some(result))
+        }
+    }
+
+    fn peek(&mut self) -> Option<char> {
+        let peek_pos = self.pos + 1;
+        if peek_pos > self.text.len() - 1 {
+            None
+        } else {
+            self.text.chars().nth(peek_pos)
+        }
+    }
+
     /*
        Lexical analyzer (or tokenizer)
 
@@ -97,6 +141,10 @@ impl Lexer {
 
             if current_char.is_digit(10) {
                 return Token::new(TokenType::INTEGER, Some(self.integer()));
+            }
+
+            if current_char.is_alphanumeric() {
+                return self.id();
             }
 
             if current_char == PLUS {
@@ -128,6 +176,22 @@ impl Lexer {
                 self.advance();
                 return Token::new(TokenType::RPAREN, Some(current_char.to_string()));
             }
+
+            if current_char == ':' && self.peek().unwrap() == '=' {
+                self.advance();
+                self.advance();
+                return Token::new(TokenType::ASSIGN, Some(current_char.to_string()));
+            }
+
+            if current_char == ';' {
+                self.advance();
+                return Token::new(TokenType::SEMI, Some(current_char.to_string()));
+            }
+
+            if current_char == '.' {
+                self.advance();
+                return Token::new(TokenType::DOT, Some(current_char.to_string()));
+            }
         }
 
         Token::new(TokenType::EOF, None)
@@ -140,6 +204,10 @@ enum AST {
     BinOp(Box<BinOp>),
     UnaryOp(Box<UnaryOp>),
     Number(Number),
+    Compound(Box<Compound>),
+    Assign(Box<Assign>),
+    Var(Box<Var>),
+    NoOp(Box<NoOp>),
 }
 
 // Binary operation
@@ -162,6 +230,27 @@ struct UnaryOp {
     op: Token,
     expr: Box<AST>,
 }
+
+// AST nodes
+#[derive(Debug)]
+struct Compound {
+    children: Vec<AST>,
+}
+
+#[derive(Debug)]
+struct Assign {
+    left: AST,
+    op: Token,
+    right: AST,
+}
+
+#[derive(Debug)]
+struct Var {
+    token: Token,
+}
+
+#[derive(Debug)]
+struct NoOp;
 
 /*
    Parser
@@ -226,7 +315,7 @@ impl Parser {
                 self.eat(TokenType::RPAREN);
                 node
             }
-            _ => panic!("Invalid syntax"),
+            _ => self.variable(),
         }
     }
 
@@ -282,8 +371,82 @@ impl Parser {
         node
     }
 
+    fn program(&mut self) -> AST {
+        let node = self.compound_statement();
+        self.eat(TokenType::DOT);
+        node
+    }
+
+    fn compound_statement(&mut self) -> AST {
+        self.eat(TokenType::BEGIN);
+        let nodes = self.statement_list();
+        self.eat(TokenType::END);
+
+        let mut root = Compound {
+            children: Vec::new(),
+        };
+        for node in nodes {
+            root.children.push(node);
+        }
+
+        AST::Compound(Box::new(root))
+    }
+
+    fn statement_list(&mut self) -> Vec<AST> {
+        let node = self.statement();
+        let mut results = vec![node];
+
+        while self.current_token.token_type == TokenType::SEMI {
+            self.eat(TokenType::SEMI);
+            results.push(self.statement());
+        }
+
+        if self.current_token.token_type == TokenType::ID {
+            self.syntax_error();
+        }
+
+        results
+    }
+
+    fn statement(&mut self) -> AST {
+        match self.current_token.token_type {
+            TokenType::BEGIN => self.compound_statement(),
+            TokenType::ID => self.assignment_statement(),
+            _ => self.empty(),
+        }
+    }
+
+    fn assignment_statement(&mut self) -> AST {
+        let left = self.variable();
+        let token = self.current_token.clone();
+        self.eat(TokenType::ASSIGN);
+        let right = self.expr();
+        AST::Assign(Box::new(Assign {
+            left,
+            op: token,
+            right,
+        }))
+    }
+
+    fn variable(&mut self) -> AST {
+        let node = Var {
+            token: self.current_token.clone(),
+        };
+        self.eat(TokenType::ID);
+        AST::Var(Box::new(node))
+    }
+
+    fn empty(&self) -> AST {
+        AST::NoOp(Box::new(NoOp {}))
+    }
+
     fn parse(&mut self) -> AST {
-        self.expr()
+        let node = self.program();
+        if self.current_token.token_type != TokenType::EOF {
+            self.syntax_error()
+        }
+
+        node
     }
 }
 
@@ -295,11 +458,15 @@ trait NodeVisitor {
 // Interpreter
 struct Interpreter {
     parser: Parser,
+    global_scope: HashMap<String, i64>,
 }
 
 impl Interpreter {
     fn new(parser: Parser) -> Self {
-        Interpreter { parser }
+        Interpreter {
+            parser,
+            global_scope: HashMap::new(),
+        }
     }
 
     fn interpret(&mut self) -> i64 {
@@ -333,6 +500,33 @@ impl Interpreter {
     fn visit_num(&self, node: &Number) -> i64 {
         node.value
     }
+
+    fn visit_noop(&self, _node: &NoOp) {}
+
+    fn visit_compound(&mut self, node: &Compound) {
+        for child in &node.children {
+            self.visit(&child);
+        }
+    }
+
+    // Stores the variable to global scope hash table
+    fn visit_assign(&mut self, node: &Assign) {
+        if let AST::Var(var) = &node.left {
+            let var_name = var.token.value.as_ref().unwrap();
+            let value = self.visit(&node.right);
+            self.global_scope.insert(var_name.clone(), value);
+        } else {
+            panic!("AssignmentError: Left side of assignment is not a variable");
+        }
+    }
+
+    fn visit_var(&self, node: &Var) -> i64 {
+        let var_name = node.token.value.as_ref().unwrap();
+        match self.global_scope.get(var_name) {
+            Some(&val) => val,
+            None => panic!("NameError: Variable not defined {}", var_name),
+        }
+    }
 }
 
 impl NodeVisitor for Interpreter {
@@ -341,51 +535,66 @@ impl NodeVisitor for Interpreter {
             AST::BinOp(bin_op) => self.visit_binop(bin_op),
             AST::UnaryOp(unary_op) => self.visit_unaryop(unary_op),
             AST::Number(num) => self.visit_num(num),
+            AST::Var(var) => self.visit_var(var),
+            AST::Assign(assign) => {
+                self.visit_assign(assign);
+                0
+            }
+            AST::Compound(compd) => {
+                self.visit_compound(compd);
+                0
+            }
+            AST::NoOp(node) => {
+                self.visit_noop(node);
+                0
+            }
+            _ => panic!("Unknown AST node"),
         }
     }
 }
 
 fn main() {
-    loop {
-        let mut text = String::new();
+    // Interpret the line
+    let lexer = Lexer::new(String::from(
+        "
+    BEGIN
+        BEGIN
+            number := 2;
+            a := number;
+            b := 10 * a + 10 * number / 4;
+            c := a - - b
+        END;
 
-        // Read line
-        print!("repl> ");
-        io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut text).unwrap();
+        x := 11;
+    END.
+    ",
+    ));
+    let parser = Parser::new(lexer);
+    let mut interpreter = Interpreter::new(parser);
+    let result = interpreter.interpret();
 
-        let input: String = text.trim().to_lowercase();
-
-        // Skip if empty
-        if input.is_empty() {
-            continue;
-        }
-
-        // Exit
-        if input == "exit" {
-            break;
-        }
-
-        // Interpret the line
-        let lexer = Lexer::new(input);
-        let parser = Parser::new(lexer);
-        let mut interpreter = Interpreter::new(parser);
-        let result = interpreter.interpret();
-
-        // Output result
-        println!("{:?}", result);
-    }
+    // Output result
+    println!("{:?}", interpreter.global_scope.get("n").unwrap());
 }
 
 mod tests {
     use super::*;
 
     // Helpers
-    fn interpret(input: String) -> i64 {
+    fn interpret_expr(input: String) -> i64 {
         let lexer = Lexer::new(input);
         let parser = Parser::new(lexer);
         let mut interpreter = Interpreter::new(parser);
         interpreter.interpret()
+    }
+
+    fn interpret(input: String) -> i64 {
+        let line = "BEGIN n := ".to_owned() + &input + "; END.";
+        let lexer = Lexer::new(line);
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        interpreter.interpret();
+        *interpreter.global_scope.get("n").unwrap()
     }
 
     #[test]
@@ -434,5 +643,52 @@ mod tests {
     fn unary_op_with_parens() {
         let result = interpret(String::from("5---+-(3 + 4)"));
         assert_eq!(result, 12);
+    }
+
+    #[test]
+    fn parse_begin_statement() {
+        let mut lexer = Lexer::new(String::from("BEGIN a := 2; END."));
+        let begintok = Token::new(TokenType::BEGIN, Some(String::from("BEGIN")));
+        assert_eq!(lexer.get_next_token(), begintok);
+    }
+
+    #[test]
+    fn parse_variable() {
+        let mut lexer = Lexer::new(String::from("BEGIN x := 5; END."));
+        let vartok = Token::new(TokenType::ID, Some(String::from("x")));
+        lexer.get_next_token();
+        assert_eq!(lexer.get_next_token(), vartok);
+    }
+
+    #[test]
+    fn parse_assignment() {
+        let mut lexer = Lexer::new(String::from("BEGIN z := 7; END."));
+        let assigntok = Token::new(TokenType::ASSIGN, Some(String::from(":")));
+        lexer.get_next_token();
+        lexer.get_next_token();
+        assert_eq!(lexer.get_next_token(), assigntok);
+    }
+
+    #[test]
+    fn parse_variables_in_global_scope() {
+        let lexer = Lexer::new(String::from(
+            "
+        BEGIN
+            BEGIN
+                x := 2;
+                a := x;
+                b := 10 * a + 10 * x / 4;
+            END;
+            x := 11;
+        END.
+        ",
+        ));
+        let parser = Parser::new(lexer);
+        let mut interpreter = Interpreter::new(parser);
+        interpreter.interpret();
+
+        assert_eq!(*interpreter.global_scope.get("x").unwrap(), 11);
+        assert_eq!(*interpreter.global_scope.get("a").unwrap(), 2);
+        assert_eq!(*interpreter.global_scope.get("b").unwrap(), 25);
     }
 }
