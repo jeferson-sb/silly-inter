@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap};
 
 // Tokens
 static LPAREN: char = '(';
@@ -19,6 +19,15 @@ enum TokenType {
     RPAREN,
     BEGIN,
     END,
+    PROGRAM,
+    VAR,
+    INTEGER_DIV,
+    INTEGER_CONST,
+    REAL_CONST,
+    FLOAT_DIV,
+    REAL,
+    COLON,
+    COMMA,
     DOT,
     ID,
     ASSIGN,
@@ -48,22 +57,41 @@ struct Lexer {
 
 impl Lexer {
     fn new(text: String) -> Self {
-        let mut lexer = Lexer {
+        Lexer {
             text: text.clone(),
             pos: 0,
             current_char: text.chars().nth(0),
-            reserved: HashMap::new(),
-        };
-        lexer.current_char = lexer.text.chars().nth(lexer.pos);
-        lexer.reserved.insert(
-            "BEGIN".to_string(),
-            Token::new(TokenType::BEGIN, Some("BEGIN".to_string())),
-        );
-        lexer.reserved.insert(
-            "END".to_string(),
-            Token::new(TokenType::END, Some("END".to_string())),
-        );
-        lexer
+            reserved: HashMap::from([
+                (
+                    "BEGIN".to_string(),
+                    Token::new(TokenType::BEGIN, Some("BEGIN".to_string())),
+                ),
+                (
+                    "END".to_string(),
+                    Token::new(TokenType::END, Some("END".to_string())),
+                ),
+                (
+                    "PROGRAM".to_string(),
+                    Token::new(TokenType::PROGRAM, Some("PROGRAM".to_string())),
+                ),
+                (
+                    "VAR".to_string(),
+                    Token::new(TokenType::VAR, Some("VAR".to_string())),
+                ),
+                (
+                    "INTEGER".to_string(),
+                    Token::new(TokenType::INTEGER, Some("INTEGER".to_string())),
+                ),
+                (
+                    "DIV".to_string(),
+                    Token::new(TokenType::INTEGER_DIV, Some("DIV".to_string())),
+                ),
+                (
+                    "REAL".to_string(),
+                    Token::new(TokenType::REAL, Some("REAL".to_string())),
+                ),
+            ]),
+        }
     }
 
     // Go to the next token
@@ -86,18 +114,41 @@ impl Lexer {
         }
     }
 
+    fn skip_comment(&mut self) {
+        while self.current_char != Some('}') {
+            self.advance()
+        }
+        self.advance()
+    }
+
     // Return a integer consumed from the input.
-    fn integer(&mut self) -> String {
+    fn number(&mut self) -> Token {
         let mut result = String::new();
-        while let Some(current_char) = self.current_char {
-            if !current_char.is_digit(10) {
+
+        while let Some(char) = self.current_char {
+            if !char.is_digit(10) {
                 break;
             }
-            result.push(current_char);
+            result.push(char);
             self.advance();
         }
 
-        result
+        if self.current_char == Some('.') {
+            result.push('.');
+            self.advance();
+
+            while let Some(char) = self.current_char {
+                if !char.is_digit(10) {
+                    break;
+                }
+                result.push(char);
+                self.advance();
+            }
+
+            Token::new(TokenType::REAL_CONST, Some(result))
+        } else {
+            Token::new(TokenType::INTEGER_CONST, Some(result))
+        }
     }
 
     fn id(&mut self) -> Token {
@@ -140,11 +191,17 @@ impl Lexer {
             }
 
             if current_char.is_digit(10) {
-                return Token::new(TokenType::INTEGER, Some(self.integer()));
+                return self.number();
             }
 
             if current_char.is_alphanumeric() {
                 return self.id();
+            }
+
+            if current_char == '{' {
+                self.advance();
+                self.skip_comment();
+                continue;
             }
 
             if current_char == PLUS {
@@ -160,11 +217,6 @@ impl Lexer {
             if current_char == MUL {
                 self.advance();
                 return Token::new(TokenType::MUL, Some(current_char.to_string()));
-            }
-
-            if current_char == DIV {
-                self.advance();
-                return Token::new(TokenType::DIV, Some(current_char.to_string()));
             }
 
             if current_char == LPAREN {
@@ -192,6 +244,21 @@ impl Lexer {
                 self.advance();
                 return Token::new(TokenType::DOT, Some(current_char.to_string()));
             }
+
+            if current_char == ':' {
+                self.advance();
+                return Token::new(TokenType::COLON, Some(current_char.to_string()));
+            }
+
+            if current_char == ',' {
+                self.advance();
+                return Token::new(TokenType::COMMA, Some(current_char.to_string()));
+            }
+
+            if current_char == '/' {
+                self.advance();
+                return Token::new(TokenType::FLOAT_DIV, Some(current_char.to_string()));
+            }
         }
 
         Token::new(TokenType::EOF, None)
@@ -199,7 +266,7 @@ impl Lexer {
 }
 
 // AST
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum AST {
     BinOp(Box<BinOp>),
     UnaryOp(Box<UnaryOp>),
@@ -207,49 +274,78 @@ enum AST {
     Compound(Box<Compound>),
     Assign(Box<Assign>),
     Var(Box<Var>),
+    Program(Box<Program>),
+    Block(Box<Block>),
+    VarDecl(Box<VarDecl>),
+    Type(Box<Type>),
     NoOp(Box<NoOp>),
 }
 
 // Binary operation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BinOp {
     left: Box<AST>,
     op: Token,
     right: Box<AST>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Number {
     token: Token,
     value: i64,
 }
 
 // Unary
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct UnaryOp {
     op: Token,
     expr: Box<AST>,
 }
 
 // AST nodes
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Compound {
     children: Vec<AST>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Assign {
     left: AST,
     op: Token,
     right: AST,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Var {
     token: Token,
+    value: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+struct Program {
+    name: String,
+    block: Box<AST>,
+}
+
+#[derive(Debug, Clone)]
+struct Block {
+    declarations: Vec<AST>,
+    compound_statement: Box<AST>,
+}
+
+#[derive(Debug, Clone)]
+struct VarDecl {
+    var_node: Box<AST>,
+    type_node: Box<AST>,
+}
+
+#[derive(Debug, Clone)]
+struct Type {
+    token: Token,
+    value: String,
+}
+
+#[derive(Debug, Clone)]
 struct NoOp;
 
 /*
@@ -284,7 +380,7 @@ impl Parser {
     }
 
     // Grammar rules
-    // Parse a factor (integer)
+    // Parse a factor like unary op, numbers, parenthesis, etc
     fn factor(&mut self) -> AST {
         let token = self.current_token.clone();
         match token.token_type {
@@ -302,8 +398,15 @@ impl Parser {
                     expr: Box::new(self.factor()),
                 }))
             }
-            TokenType::INTEGER => {
-                self.eat(TokenType::INTEGER);
+            TokenType::INTEGER_CONST => {
+                self.eat(TokenType::INTEGER_CONST);
+                AST::Number(Number {
+                    token: token.clone(),
+                    value: token.value.unwrap().parse::<i64>().unwrap(),
+                })
+            }
+            TokenType::REAL_CONST => {
+                self.eat(TokenType::REAL_CONST);
                 AST::Number(Number {
                     token: token.clone(),
                     value: token.value.unwrap().parse::<i64>().unwrap(),
@@ -325,14 +428,16 @@ impl Parser {
     fn term(&mut self) -> AST {
         let mut node = self.factor();
 
-        while self.current_token.token_type == TokenType::MUL
-            || self.current_token.token_type == TokenType::DIV
-        {
+        while matches!(
+            self.current_token.token_type,
+            TokenType::MUL | TokenType::INTEGER_DIV | TokenType::FLOAT_DIV
+        ) {
             let token = self.current_token.clone();
-            if token.token_type == TokenType::MUL {
-                self.eat(TokenType::MUL);
-            } else if token.token_type == TokenType::DIV {
-                self.eat(TokenType::DIV);
+            match token.token_type {
+                TokenType::MUL => self.eat(TokenType::MUL),
+                TokenType::INTEGER_DIV => self.eat(TokenType::INTEGER_DIV),
+                TokenType::FLOAT_DIV => self.eat(TokenType::FLOAT_DIV),
+                _ => panic!("Unexpected token"),
             }
             node = AST::BinOp(Box::new(BinOp {
                 left: Box::new(node),
@@ -372,9 +477,20 @@ impl Parser {
     }
 
     fn program(&mut self) -> AST {
-        let node = self.compound_statement();
+        self.eat(TokenType::PROGRAM);
+        let var_node = self.variable();
+        let prog_name = match &var_node {
+            AST::Var(var) => var.value.clone(),
+            _ => panic!("Expected variable"),
+        };
+        self.eat(TokenType::SEMI);
+        let block_node = self.block();
+        let program_node = Program {
+            name: prog_name,
+            block: Box::new(block_node),
+        };
         self.eat(TokenType::DOT);
-        node
+        AST::Program(Box::new(program_node))
     }
 
     fn compound_statement(&mut self) -> AST {
@@ -430,10 +546,86 @@ impl Parser {
 
     fn variable(&mut self) -> AST {
         let node = Var {
+            value: self.current_token.clone().value.unwrap(),
             token: self.current_token.clone(),
         };
         self.eat(TokenType::ID);
         AST::Var(Box::new(node))
+    }
+
+    fn block(&mut self) -> AST {
+        let declr_nodes = self.declarations();
+        let compound_statement_node = self.compound_statement();
+        let node = Block {
+            declarations: declr_nodes,
+            compound_statement: Box::new(compound_statement_node),
+        };
+
+        AST::Block(Box::new(node))
+    }
+
+    fn declarations(&mut self) -> Vec<AST> {
+        let mut declarations = Vec::new();
+
+        if self.current_token.token_type == TokenType::VAR {
+            self.eat(TokenType::VAR);
+
+            while self.current_token.token_type == TokenType::ID {
+                let decl = self.variable_declaration();
+                declarations.extend(decl);
+                self.eat(TokenType::SEMI);
+            }
+        }
+
+        declarations
+    }
+
+    fn variable_declaration(&mut self) -> Vec<AST> {
+        let mut nodes = vec![AST::Var(Box::new(Var {
+            token: self.current_token.clone(),
+            value: self.current_token.clone().value.unwrap(),
+        }))];
+        self.eat(TokenType::ID);
+
+        while self.current_token.token_type == TokenType::COMMA {
+            self.eat(TokenType::COMMA);
+            nodes.push(AST::Var(Box::new(Var {
+                value: self.current_token.clone().value.unwrap(),
+                token: self.current_token.clone(),
+            })));
+            self.eat(TokenType::ID);
+        }
+
+        self.eat(TokenType::COLON);
+
+        let type_node = self.type_spec();
+        nodes
+            .into_iter()
+            .map(|var_node| {
+                AST::VarDecl(Box::new(VarDecl {
+                    var_node: Box::new(var_node),
+                    type_node: Box::new(type_node.clone()),
+                }))
+            })
+            .collect()
+    }
+
+    fn type_spec(&mut self) -> AST {
+        match self.current_token.token_type {
+            TokenType::INTEGER => {
+                self.eat(TokenType::INTEGER);
+            }
+            TokenType::REAL => {
+                self.eat(TokenType::REAL);
+            }
+            _ => {
+                self.syntax_error();
+            }
+        }
+        AST::Type(Box::new(Type {
+            token: self.current_token.clone(),
+            value: self.current_token.clone().value.unwrap(),
+        }))
     }
 
     fn empty(&self) -> AST {
@@ -482,7 +674,8 @@ impl Interpreter {
             TokenType::PLUS => left_val + right_val,
             TokenType::MINUS => left_val - right_val,
             TokenType::MUL => left_val * right_val,
-            TokenType::DIV => left_val / right_val,
+            TokenType::INTEGER_DIV => left_val / right_val, // TODO: Fix integer division
+            TokenType::FLOAT_DIV => left_val / right_val,
             _ => panic!("Invalid operator"),
         }
     }
@@ -501,12 +694,15 @@ impl Interpreter {
         node.value
     }
 
-    fn visit_noop(&self, _node: &NoOp) {}
+    fn visit_noop(&self, _node: &NoOp) -> i64 {
+        0
+    }
 
-    fn visit_compound(&mut self, node: &Compound) {
+    fn visit_compound(&mut self, node: &Compound) -> i64 {
         for child in &node.children {
             self.visit(&child);
         }
+        0
     }
 
     // Stores the variable to global scope hash table
@@ -527,28 +723,45 @@ impl Interpreter {
             None => panic!("NameError: Variable not defined {}", var_name),
         }
     }
+
+    fn visit_program(&mut self, node: &Program) -> i64 {
+        self.visit(&node.block)
+    }
+
+    fn visit_block(&mut self, node: &Block) -> i64 {
+        for declaration in &node.declarations {
+            self.visit(declaration);
+        }
+
+        self.visit(&node.compound_statement)
+    }
+
+    fn visit_vardecl(&self, node: &VarDecl) -> i64 {
+        0
+    }
+
+    fn visit_type(&self, node: &Type) -> i64 {
+        0
+    }
 }
 
 impl NodeVisitor for Interpreter {
     fn visit(&mut self, node: &AST) -> i64 {
         match node {
-            AST::BinOp(bin_op) => self.visit_binop(bin_op),
+            AST::Program(prog) => self.visit_program(prog),
+            AST::Block(block) => self.visit_block(block),
+            AST::Var(var) => self.visit_var(var),
             AST::UnaryOp(unary_op) => self.visit_unaryop(unary_op),
             AST::Number(num) => self.visit_num(num),
-            AST::Var(var) => self.visit_var(var),
+            AST::BinOp(bin_op) => self.visit_binop(bin_op),
+            AST::NoOp(noop) => self.visit_noop(noop),
             AST::Assign(assign) => {
                 self.visit_assign(assign);
                 0
             }
-            AST::Compound(compd) => {
-                self.visit_compound(compd);
-                0
-            }
-            AST::NoOp(node) => {
-                self.visit_noop(node);
-                0
-            }
-            _ => panic!("Unknown AST node"),
+            AST::VarDecl(var_decl) => self.visit_vardecl(var_decl),
+            AST::Type(type_spec) => self.visit_type(type_spec),
+            AST::Compound(compound) => self.visit_compound(compound),
         }
     }
 }
@@ -557,15 +770,9 @@ fn main() {
     // Interpret the line
     let lexer = Lexer::new(String::from(
         "
+    PROGRAM scopes;
     BEGIN
-        BEGIN
-            number := 2;
-            a := number;
-            b := 10 * a + 10 * number / 4;
-            c := a - - b
-        END;
-
-        x := 11;
+        x := 10 / 2.0;
     END.
     ",
     ));
@@ -574,7 +781,7 @@ fn main() {
     let result = interpreter.interpret();
 
     // Output result
-    println!("{:?}", interpreter.global_scope.get("n").unwrap());
+    println!("{:?}", interpreter.global_scope);
 }
 
 mod tests {
@@ -589,7 +796,7 @@ mod tests {
     }
 
     fn interpret(input: String) -> i64 {
-        let line = "BEGIN n := ".to_owned() + &input + "; END.";
+        let line = "PROGRAM hello; BEGIN n := ".to_owned() + &input + "; END.";
         let lexer = Lexer::new(line);
         let parser = Parser::new(lexer);
         let mut interpreter = Interpreter::new(parser);
@@ -617,13 +824,13 @@ mod tests {
 
     #[test]
     fn multiple_operators() {
-        let result = interpret(String::from("14 + 2 * 3 - 6 / 2"));
+        let result = interpret(String::from("14 + 2 * 3 - 6 DIV 2"));
         assert_eq!(result, 17);
     }
 
     #[test]
     fn handle_parens() {
-        let result = interpret(String::from("7 + 3 * (10 / (12 / (3 + 1) - 1))"));
+        let result = interpret(String::from("7 + 3 * (10 DIV (12 DIV (3 + 1) - 1))"));
         assert_eq!(result, 22);
     }
 
@@ -673,11 +880,12 @@ mod tests {
     fn parse_variables_in_global_scope() {
         let lexer = Lexer::new(String::from(
             "
+        PROGRAM scopes;
         BEGIN
             BEGIN
                 x := 2;
                 a := x;
-                b := 10 * a + 10 * x / 4;
+                b := 10 * a + 10 * x DIV 4;
             END;
             x := 11;
         END.
