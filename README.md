@@ -1,3 +1,3 @@
 # silly-inter
 
-Just experimenting for fun!
+Just experimenting building a simple interperter for fun!
