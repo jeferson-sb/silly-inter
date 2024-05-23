@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::{ast::*, parser::Parser, token::TokenType};
 
-// NodeVisitor
-trait NodeVisitor {
+// Tree-walker
+pub trait NodeVisitor {
     fn visit(&mut self, node: &AST) -> i64;
 }
 

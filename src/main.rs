@@ -1,29 +1,64 @@
+use std::rc::Rc;
+
 use interpr::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
+
+use crate::{
+    interpr::NodeVisitor,
+    symbol::{BuiltinTypeSymbol, Symbol, SymbolTable, SymbolTableBuilder, VarSymbol},
+};
 
 mod ast;
 mod interpr;
 mod lexer;
 mod parser;
+mod symbol;
 mod token;
 
-fn main() {
-    // Interpret the line
-    let lexer = Lexer::new(String::from(
+fn interpreter_example() {
+    let line = String::from(
         "
-    PROGRAM scopes;
-    BEGIN
-        x := 10 / 2.0;
+    PROGRAM hello; 
+    VAR
+        z : INTEGER;
+    BEGIN 
+
     END.
     ",
-    ));
+    );
+    let lexer = Lexer::new(line);
     let parser = Parser::new(lexer);
     let mut interpreter = Interpreter::new(parser);
     interpreter.interpret();
 
-    // Output result
     println!("{:?}", interpreter.global_scope);
+}
+
+fn symbol_example() {
+    // Interpret the line
+    let input = String::from(
+        "
+    PROGRAM symbols;
+    VAR
+        x : INTEGER;
+        y : REAL;
+    BEGIN
+
+    END.
+    ",
+    );
+    let lexer = Lexer::new(input);
+    let mut parser = Parser::new(lexer);
+    let tree = parser.parse();
+    let mut symtab_builder = SymbolTableBuilder::new();
+
+    symtab_builder.visit(&tree);
+    println!("{:?}", symtab_builder.symtab);
+}
+
+fn main() {
+    symbol_example();
 }
 
 mod tests {
@@ -142,5 +177,27 @@ mod tests {
         assert_eq!(*interpreter.global_scope.get("x").unwrap(), 11);
         assert_eq!(*interpreter.global_scope.get("a").unwrap(), 2);
         assert_eq!(*interpreter.global_scope.get("b").unwrap(), 25);
+    }
+
+    #[test]
+    fn define_a_symbol() {
+        let mut symtab = SymbolTable::new();
+        let int_type = Symbol::new(String::from("INTEGER"), None);
+        symtab.define(Rc::new(int_type));
+
+        assert_eq!(symtab.symbols.is_empty(), false);
+        assert_eq!(symtab.symbols.get("INTEGER").unwrap().name(), "INTEGER");
+    }
+
+    #[test]
+    fn define_a_variable_symbol() {
+        let mut symtab = SymbolTable::new();
+        let real_type = Rc::new(BuiltinTypeSymbol::new(String::from("REAL")));
+        symtab.define(real_type.clone());
+        let var_sym = VarSymbol::new(String::from("y"), real_type);
+        symtab.define(Rc::new(var_sym));
+
+        assert_eq!(symtab.symbols.contains_key("y"), true);
+        assert_eq!(symtab.symbols.contains_key("REAL"), true);
     }
 }
