@@ -98,6 +98,7 @@ pub struct SymbolTableBuilder {
     pub symtab: SymbolTable,
 }
 
+// SemanticAnalyzer
 impl SymbolTableBuilder {
     pub fn new() -> Self {
         SymbolTableBuilder {
@@ -157,7 +158,7 @@ impl SymbolTableBuilder {
 
     pub fn visit_var(&self, node: &Var) -> i64 {
         let var_name = &node.value;
-        let var_symbol = self.symtab.lookup(&var_name);
+        let var_symbol = self.symtab.lookup(&var_name).expect("Symbol not found");
         0
     }
 
@@ -183,6 +184,10 @@ impl SymbolTableBuilder {
     pub fn visit_type(&self, node: &Type) -> i64 {
         0
     }
+
+    pub fn visit_proceduredecl(&self, node: &ProcedureDecl) -> i64 {
+        0
+    }
 }
 
 // Tree-walking
@@ -201,6 +206,7 @@ impl NodeVisitor for SymbolTableBuilder {
                 0
             }
             AST::VarDecl(var_decl) => self.visit_vardecl(var_decl),
+            AST::ProcedureDecl(proc_decl) => self.visit_proceduredecl(proc_decl),
             AST::Type(type_spec) => self.visit_type(type_spec),
             AST::Compound(compound) => self.visit_compound(compound),
         }

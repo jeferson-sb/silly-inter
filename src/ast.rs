@@ -67,6 +67,12 @@ pub struct Assign {
 }
 
 #[derive(Debug, Clone)]
+pub struct ProcedureDecl {
+    pub proc_name: String,
+    pub block_node: AST,
+}
+
+#[derive(Debug, Clone)]
 pub enum AST {
     BinOp(Box<BinOp>),
     UnaryOp(Box<UnaryOp>),
@@ -77,6 +83,7 @@ pub enum AST {
     Program(Box<Program>),
     Block(Box<Block>),
     VarDecl(Box<VarDecl>),
+    ProcedureDecl(Box<ProcedureDecl>),
     Type(Box<Type>),
     NoOp(Box<NoOp>),
 }

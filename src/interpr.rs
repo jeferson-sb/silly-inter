@@ -119,6 +119,7 @@ impl NodeVisitor for Interpreter {
                 0
             }
             AST::VarDecl(var_decl) => self.visit_vardecl(var_decl),
+            AST::ProcedureDecl(proc_decl) => 0,
             AST::Type(type_spec) => self.visit_type(type_spec),
             AST::Compound(compound) => self.visit_compound(compound),
         }

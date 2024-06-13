@@ -44,6 +44,10 @@ impl Lexer {
                     "REAL".to_string(),
                     Token::new(TokenType::REAL, Some("REAL".to_string())),
                 ),
+                (
+                    "PROCEDURE".to_string(),
+                    Token::new(TokenType::PROCEDURE, Some("PROCEDURE".to_string())),
+                ),
             ]),
         }
     }

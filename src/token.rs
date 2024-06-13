@@ -22,6 +22,7 @@ pub enum TokenType {
     ID,
     ASSIGN,
     SEMI,
+    PROCEDURE,
     EOF,
 }
 

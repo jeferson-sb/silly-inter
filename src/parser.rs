@@ -233,6 +233,20 @@ impl Parser {
             }
         }
 
+        while self.current_token.token_type == TokenType::PROCEDURE {
+            self.eat(TokenType::PROCEDURE);
+            let proc_name = self.current_token.clone();
+            self.eat(TokenType::ID);
+            self.eat(TokenType::SEMI);
+            let block_node = self.block();
+            let proc_decl = ProcedureDecl {
+                proc_name: proc_name.value.unwrap(),
+                block_node,
+            };
+            declarations.push(AST::ProcedureDecl(Box::new(proc_decl)));
+            self.eat(TokenType::SEMI);
+        }
+
         declarations
     }
 
