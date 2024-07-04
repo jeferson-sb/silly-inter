@@ -4,10 +4,9 @@ use crate::{
     token::{Token, TokenType},
 };
 
-/*
-   Parser
-   The parser will hold a lexer and its current token
-*/
+/// Parser
+///
+/// The parser will hold a lexer and its current token
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
@@ -26,7 +25,7 @@ impl Parser {
         panic!("Invalid syntax");
     }
 
-    // Compare current token type with a given token and proceed to the next
+    /// Compare current token type with a given token and proceed to the next
     pub fn eat(&mut self, token_type: TokenType) {
         if self.current_token.token_type == token_type {
             self.current_token = self.lexer.get_next_token();
@@ -35,8 +34,9 @@ impl Parser {
         }
     }
 
-    // Grammar rules
-    // Parse a factor like unary op, numbers, parenthesis, etc
+    /// Grammar rules
+    ///
+    /// Parse a factor like unary op, numbers, parenthesis, etc
     pub fn factor(&mut self) -> AST {
         let token = self.current_token.clone();
         match token.token_type {
@@ -44,14 +44,14 @@ impl Parser {
                 self.eat(TokenType::PLUS);
                 AST::UnaryOp(Box::new(UnaryOp {
                     op: token,
-                    expr: Box::new(self.factor()),
+                    expr: self.factor(),
                 }))
             }
             TokenType::MINUS => {
                 self.eat(TokenType::MINUS);
                 AST::UnaryOp(Box::new(UnaryOp {
                     op: token,
-                    expr: Box::new(self.factor()),
+                    expr: self.factor(),
                 }))
             }
             TokenType::INTEGER_CONST => {
@@ -78,9 +78,7 @@ impl Parser {
         }
     }
 
-    /*
-        term : factor((MUL|DIV) factor)*
-    */
+    /// term : *factor((MUL|DIV) factor)*
     pub fn term(&mut self) -> AST {
         let mut node = self.factor();
 
@@ -96,9 +94,9 @@ impl Parser {
                 _ => panic!("Unexpected token"),
             }
             node = AST::BinOp(Box::new(BinOp {
-                left: Box::new(node),
+                left: node,
                 op: token,
-                right: Box::new(self.factor()),
+                right: self.factor(),
             }));
         }
 
@@ -123,9 +121,9 @@ impl Parser {
                 self.eat(TokenType::MINUS);
             }
             node = AST::BinOp(Box::new(BinOp {
-                left: Box::new(node),
+                left: node,
                 op: token,
-                right: Box::new(self.term()),
+                right: self.term(),
             }));
         }
 
@@ -143,7 +141,7 @@ impl Parser {
         let block_node = self.block();
         let program_node = Program {
             name: prog_name,
-            block: Box::new(block_node),
+            block: block_node,
         };
         self.eat(TokenType::DOT);
         AST::Program(Box::new(program_node))
@@ -214,7 +212,7 @@ impl Parser {
         let compound_statement_node = self.compound_statement();
         let node = Block {
             declarations: declr_nodes,
-            compound_statement: Box::new(compound_statement_node),
+            compound_statement: compound_statement_node,
         };
 
         AST::Block(Box::new(node))
@@ -273,8 +271,8 @@ impl Parser {
             .into_iter()
             .map(|var_node| {
                 AST::VarDecl(Box::new(VarDecl {
-                    var_node: Box::new(var_node),
-                    type_node: Box::new(type_node.clone()),
+                    var_node: var_node,
+                    type_node: type_node.clone(),
                 }))
             })
             .collect()

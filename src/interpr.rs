@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{ast::*, parser::Parser, token::TokenType};
 
-// Tree-walker
+/// Tree-walker
+///
+/// Going through every child node from left to right (postorder-traversel)
 pub trait NodeVisitor {
     fn visit(&mut self, node: &AST) -> i64;
 }
@@ -26,6 +28,7 @@ impl Interpreter {
     }
 
     fn visit_binop(&mut self, node: &BinOp) -> i64 {
+        // TODO: Make it work with floats
         let left_val = self.visit(&node.left);
         let right_val = self.visit(&node.right);
 
@@ -33,7 +36,7 @@ impl Interpreter {
             TokenType::PLUS => left_val + right_val,
             TokenType::MINUS => left_val - right_val,
             TokenType::MUL => left_val * right_val,
-            TokenType::INTEGER_DIV => left_val / right_val, // TODO: Fix integer division
+            TokenType::INTEGER_DIV => left_val / right_val,
             TokenType::FLOAT_DIV => left_val / right_val,
             _ => panic!("Invalid operator"),
         }
@@ -54,6 +57,7 @@ impl Interpreter {
     }
 
     fn visit_noop(&self, _node: &NoOp) -> i64 {
+        // TODO: change to empty block and remove i64
         0
     }
 

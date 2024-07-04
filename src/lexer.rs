@@ -126,6 +126,7 @@ impl Lexer {
         }
     }
 
+    /// Use to differentiate between tokens that starts with same char :=, ==, =>
     pub fn peek(&mut self) -> Option<char> {
         let peek_pos = self.pos + 1;
         if peek_pos > self.text.len() - 1 {
@@ -162,60 +163,15 @@ impl Lexer {
                 continue;
             }
 
-            if current_char == '+' {
-                self.advance();
-                return Token::new(TokenType::PLUS, Some(current_char.to_string()));
-            }
-
-            if current_char == '-' {
-                self.advance();
-                return Token::new(TokenType::MINUS, Some(current_char.to_string()));
-            }
-
-            if current_char == '*' {
-                self.advance();
-                return Token::new(TokenType::MUL, Some(current_char.to_string()));
-            }
-
-            if current_char == '(' {
-                self.advance();
-                return Token::new(TokenType::LPAREN, Some(current_char.to_string()));
-            }
-
-            if current_char == ')' {
-                self.advance();
-                return Token::new(TokenType::RPAREN, Some(current_char.to_string()));
-            }
-
             if current_char == ':' && self.peek().unwrap() == '=' {
                 self.advance();
                 self.advance();
-                return Token::new(TokenType::ASSIGN, Some(current_char.to_string()));
+                return Token::new(TokenType::ASSIGN, Some(String::from(":=")));
             }
 
-            if current_char == ';' {
+            if let Some(token_type) = TokenType::from_char(current_char) {
                 self.advance();
-                return Token::new(TokenType::SEMI, Some(current_char.to_string()));
-            }
-
-            if current_char == '.' {
-                self.advance();
-                return Token::new(TokenType::DOT, Some(current_char.to_string()));
-            }
-
-            if current_char == ':' {
-                self.advance();
-                return Token::new(TokenType::COLON, Some(current_char.to_string()));
-            }
-
-            if current_char == ',' {
-                self.advance();
-                return Token::new(TokenType::COMMA, Some(current_char.to_string()));
-            }
-
-            if current_char == '/' {
-                self.advance();
-                return Token::new(TokenType::FLOAT_DIV, Some(current_char.to_string()));
+                return Token::new(token_type, Some(current_char.to_string()));
             }
         }
 

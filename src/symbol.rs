@@ -80,9 +80,6 @@ impl SymbolTable {
         self.define(Rc::new(int_type));
         let real_type = BuiltinTypeSymbol::new(String::from("REAL"));
         self.define(Rc::new(real_type));
-        // TMP: prevent colon variable declaration token from not being able to lookup
-        let colon_symbol = Symbol::new(String::from(";"), None);
-        self.define(Rc::new(colon_symbol));
     }
 
     pub fn define(&mut self, symbol: Rc<dyn SymbolTrait>) {
@@ -134,7 +131,7 @@ impl SymbolTableBuilder {
     }
 
     pub fn visit_vardecl(&mut self, node: &VarDecl) -> i64 {
-        let type_name = if let AST::Type(ref value) = *node.type_node {
+        let type_name = if let AST::Type(ref value) = node.type_node {
             value.clone()
         } else {
             panic!("Expected Type node");
@@ -145,7 +142,7 @@ impl SymbolTableBuilder {
             .lookup(&type_name.value)
             .expect("Type not found");
 
-        let var_name = if let AST::Var(ref value) = *node.var_node {
+        let var_name = if let AST::Var(ref value) = node.var_node {
             value.clone()
         } else {
             panic!("Expected Var node");
