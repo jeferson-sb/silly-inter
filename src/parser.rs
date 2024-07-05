@@ -248,6 +248,7 @@ impl Parser {
         declarations
     }
 
+    /// variable_declaration : ID (COMMA ID)* COLON type_spec
     pub fn variable_declaration(&mut self) -> Vec<AST> {
         let mut nodes = vec![AST::Var(Box::new(Var {
             token: self.current_token.clone(),
@@ -279,20 +280,17 @@ impl Parser {
     }
 
     pub fn type_spec(&mut self) -> AST {
-        match self.current_token.token_type {
-            TokenType::INTEGER => {
-                self.eat(TokenType::INTEGER);
-            }
-            TokenType::REAL => {
-                self.eat(TokenType::REAL);
-            }
-            _ => {
-                self.syntax_error();
-            }
+        let token = self.current_token.clone();
+
+        if token.token_type == TokenType::INTEGER {
+            self.eat(TokenType::INTEGER);
+        } else {
+            self.eat(TokenType::REAL);
         }
+
         AST::Type(Box::new(Type {
-            token: self.current_token.clone(),
-            value: self.current_token.clone().value.unwrap(),
+            token: token.clone(),
+            value: token.clone().value.unwrap(),
         }))
     }
 

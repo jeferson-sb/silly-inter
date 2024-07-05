@@ -69,7 +69,7 @@ impl Interpreter {
     }
 
     // Stores the variable to global scope hash table
-    fn visit_assign(&mut self, node: &Assign) {
+    fn visit_assign(&mut self, node: &Assign) -> i64 {
         if let AST::Var(var) = &node.left {
             let var_name = var.token.value.as_ref().unwrap();
             let value = self.visit(&node.right);
@@ -77,6 +77,7 @@ impl Interpreter {
         } else {
             panic!("AssignmentError: Left side of assignment is not a variable");
         }
+        0
     }
 
     fn visit_var(&self, node: &Var) -> i64 {
@@ -118,10 +119,7 @@ impl NodeVisitor for Interpreter {
             AST::Number(num) => self.visit_num(num),
             AST::BinOp(bin_op) => self.visit_binop(bin_op),
             AST::NoOp(noop) => self.visit_noop(noop),
-            AST::Assign(assign) => {
-                self.visit_assign(assign);
-                0
-            }
+            AST::Assign(assign) => self.visit_assign(assign),
             AST::VarDecl(var_decl) => self.visit_vardecl(var_decl),
             AST::ProcedureDecl(proc_decl) => 0,
             AST::Type(type_spec) => self.visit_type(type_spec),

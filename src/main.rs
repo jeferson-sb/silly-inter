@@ -58,7 +58,7 @@ fn symbol_example() {
 }
 
 fn main() {
-    symbol_example();
+    symbol_example()
 }
 
 mod tests {
@@ -75,7 +75,7 @@ mod tests {
     }
 
     fn interpret(input: String) -> i64 {
-        let line = "PROGRAM hello; BEGIN n := ".to_owned() + &input + "; END.";
+        let line: String = "PROGRAM hello; BEGIN n := ".to_owned() + &input + "; END.";
         let lexer = Lexer::new(line);
         let parser = Parser::new(lexer);
         let mut interpreter = Interpreter::new(parser);
@@ -132,14 +132,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_begin_statement() {
+    fn lexer_begin_statement() {
         let mut lexer = Lexer::new(String::from("BEGIN a := 2; END."));
         let begintok = Token::new(TokenType::BEGIN, Some(String::from("BEGIN")));
         assert_eq!(lexer.get_next_token(), begintok);
     }
 
     #[test]
-    fn parse_variable() {
+    fn lexer_variable() {
         let mut lexer = Lexer::new(String::from("BEGIN x := 5; END."));
         let vartok = Token::new(TokenType::ID, Some(String::from("x")));
         lexer.get_next_token();
@@ -147,12 +147,65 @@ mod tests {
     }
 
     #[test]
-    fn parse_assignment() {
-        let mut lexer = Lexer::new(String::from("BEGIN z := 7; END."));
-        let assigntok = Token::new(TokenType::ASSIGN, Some(String::from(":")));
-        lexer.get_next_token();
+    fn lexer_assignment() {
+        let mut lexer = Lexer::new(String::from("a := 42;"));
+        let assigntok = Token::new(TokenType::ASSIGN, Some(String::from(":=")));
         lexer.get_next_token();
         assert_eq!(lexer.get_next_token(), assigntok);
+    }
+
+    #[test]
+    fn lexer_program_token() {
+        let mut lexer = Lexer::new(String::from("PROGRAM;"));
+        let programtok = Token::new(TokenType::PROGRAM, Some(String::from("PROGRAM")));
+        assert_eq!(lexer.get_next_token(), programtok);
+    }
+
+    #[test]
+    fn lexer_id_token() {
+        let mut lexer = Lexer::new(String::from("PROGRAM hello;"));
+        let idtok = Token::new(TokenType::ID, Some(String::from("hello")));
+        lexer.get_next_token();
+        assert_eq!(lexer.get_next_token(), idtok);
+    }
+
+    #[test]
+    fn lexer_semi_token() {
+        let mut lexer = Lexer::new(String::from("n := 1;"));
+        let semitok = Token::new(TokenType::SEMI, Some(String::from(";")));
+        lexer.get_next_token();
+        lexer.get_next_token();
+        lexer.get_next_token();
+        assert_eq!(lexer.get_next_token(), semitok);
+    }
+
+    #[test]
+    #[ignore]
+    fn empty_ast() {}
+
+    #[test]
+    #[ignore]
+    fn parse_compound_statement() {}
+
+    #[test]
+    fn parse_types() {
+        let lexer = Lexer::new(String::from(
+            "
+        PROGRAM Part11;
+        VAR
+            x : INTEGER;
+            y : REAL;
+
+        BEGIN
+
+        END.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut symtab_builder = SymbolTableBuilder::new();
+        symtab_builder.visit(&tree);
+        assert_eq!(symtab_builder.symtab.symbols.len(), 4);
     }
 
     #[test]
@@ -200,4 +253,35 @@ mod tests {
         assert_eq!(symtab.symbols.contains_key("y"), true);
         assert_eq!(symtab.symbols.contains_key("REAL"), true);
     }
+
+    #[test]
+    fn symbol_table_builtins() {
+        let symtab = SymbolTable::new();
+        assert_eq!(symtab.symbols.len(), 2);
+        assert_eq!(symtab.symbols.contains_key("INTEGER"), true);
+        assert_eq!(symtab.symbols.contains_key("REAL"), true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn undefined_variable_referenced() {
+        let lexer = Lexer::new(String::from(
+            "
+        PROGRAM var_refs;
+        VAR
+            a : INTEGER;
+
+        BEGIN
+            a := 2 + b
+        END.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut symtab_builder = SymbolTableBuilder::new();
+        symtab_builder.visit(&tree);
+    }
+
+    #[test]
+    fn procedures() {}
 }

@@ -114,6 +114,7 @@ impl SymbolTableBuilder {
         self.visit(&node.block)
     }
 
+    // TODO: Work with other types than i64
     pub fn visit_compound(&mut self, node: &Compound) -> i64 {
         for child in &node.children {
             self.visit(child);
@@ -164,10 +165,10 @@ impl SymbolTableBuilder {
             let var_name = var.token.value.as_ref().unwrap();
             let var_symbol = self.symtab.lookup(&var_name);
             self.visit(&node.right);
-            0
         } else {
             panic!("AssignmentError: Left side of assignment is not a variable");
         }
+        0
     }
 
     pub fn visit_num(&self, node: &Number) -> i64 {
@@ -198,10 +199,7 @@ impl NodeVisitor for SymbolTableBuilder {
             AST::Number(num) => self.visit_num(num),
             AST::BinOp(bin_op) => self.visit_binop(bin_op),
             AST::NoOp(noop) => self.visit_noop(noop),
-            AST::Assign(assign) => {
-                self.visit_assign(assign);
-                0
-            }
+            AST::Assign(assign) => self.visit_assign(assign),
             AST::VarDecl(var_decl) => self.visit_vardecl(var_decl),
             AST::ProcedureDecl(proc_decl) => self.visit_proceduredecl(proc_decl),
             AST::Type(type_spec) => self.visit_type(type_spec),
