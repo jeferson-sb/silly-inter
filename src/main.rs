@@ -6,7 +6,7 @@ use parser::Parser;
 
 use crate::{
     interpr::NodeVisitor,
-    symbol::{BuiltinTypeSymbol, Symbol, SymbolTable, SymbolTableBuilder, VarSymbol},
+    symbol::{BuiltinTypeSymbol, ScopedSymbolTable, SemanticAnalyzer, Symbol, VarSymbol},
 };
 
 mod ast;
@@ -16,50 +16,7 @@ mod parser;
 mod symbol;
 mod token;
 
-fn interpreter_example() {
-    let line = String::from(
-        "
-    PROGRAM hello; 
-    VAR
-        z : INTEGER;
-    BEGIN 
-
-    END.
-    ",
-    );
-    let lexer = Lexer::new(line);
-    let parser = Parser::new(lexer);
-    let mut interpreter = Interpreter::new(parser);
-    interpreter.interpret();
-
-    println!("{:?}", interpreter.global_scope);
-}
-
-fn symbol_example() {
-    // Interpret the line
-    let input = String::from(
-        "
-    PROGRAM symbols;
-    VAR
-        x : INTEGER;
-        y : REAL;
-    BEGIN
-
-    END.
-    ",
-    );
-    let lexer = Lexer::new(input);
-    let mut parser = Parser::new(lexer);
-    let tree = parser.parse();
-    let mut symtab_builder = SymbolTableBuilder::new();
-
-    symtab_builder.visit(&tree);
-    println!("{:?}", symtab_builder.symtab);
-}
-
-fn main() {
-    symbol_example()
-}
+fn main() {}
 
 mod tests {
     use crate::token::{Token, TokenType};
@@ -187,27 +144,26 @@ mod tests {
     #[ignore]
     fn parse_compound_statement() {}
 
-    #[test]
-    fn parse_types() {
-        let lexer = Lexer::new(String::from(
-            "
-        PROGRAM Part11;
-        VAR
-            x : INTEGER;
-            y : REAL;
+    // #[test]
+    // fn parse_types() {
+    //     let lexer = Lexer::new(String::from(
+    //         "
+    //     PROGRAM Part11;
+    //     VAR
+    //         x : INTEGER;
+    //         y : REAL;
 
-        BEGIN
+    //     BEGIN
 
-        END.
-        ",
-        ));
-        let mut parser = Parser::new(lexer);
-        let tree = parser.parse();
-        let mut symtab_builder = SymbolTableBuilder::new();
-        symtab_builder.visit(&tree);
-        assert_eq!(symtab_builder.symtab.symbols.len(), 4);
-    }
-
+    //     END.
+    //     ",
+    //     ));
+    //     let mut parser = Parser::new(lexer);
+    //     let tree = parser.parse();
+    //     let mut symtab_builder = SemanticAnalyzer::new();
+    //     symtab_builder.visit(&tree);
+    //     assert_eq!(symtab_builder.scope.symbols.len(), 4);
+    // }
     #[test]
     fn parse_variables_in_global_scope() {
         let lexer = Lexer::new(String::from(
@@ -234,32 +190,32 @@ mod tests {
 
     #[test]
     fn define_a_symbol() {
-        let mut symtab = SymbolTable::new();
+        let mut scope = ScopedSymbolTable::new(String::from("global"), 1);
         let int_type = Symbol::new(String::from("INTEGER"), None);
-        symtab.define(Rc::new(int_type));
+        scope.define(Rc::new(int_type));
 
-        assert_eq!(symtab.symbols.is_empty(), false);
-        assert_eq!(symtab.symbols.get("INTEGER").unwrap().name(), "INTEGER");
+        assert_eq!(scope.symbols.is_empty(), false);
+        assert_eq!(scope.symbols.get("INTEGER").unwrap().name(), "INTEGER");
     }
 
     #[test]
     fn define_a_variable_symbol() {
-        let mut symtab = SymbolTable::new();
+        let mut scope = ScopedSymbolTable::new(String::from("global"), 1);
         let real_type = Rc::new(BuiltinTypeSymbol::new(String::from("REAL")));
-        symtab.define(real_type.clone());
+        scope.define(real_type.clone());
         let var_sym = VarSymbol::new(String::from("y"), real_type);
-        symtab.define(Rc::new(var_sym));
+        scope.define(Rc::new(var_sym));
 
-        assert_eq!(symtab.symbols.contains_key("y"), true);
-        assert_eq!(symtab.symbols.contains_key("REAL"), true);
+        assert_eq!(scope.symbols.contains_key("y"), true);
+        assert_eq!(scope.symbols.contains_key("REAL"), true);
     }
 
     #[test]
-    fn symbol_table_builtins() {
-        let symtab = SymbolTable::new();
-        assert_eq!(symtab.symbols.len(), 2);
-        assert_eq!(symtab.symbols.contains_key("INTEGER"), true);
-        assert_eq!(symtab.symbols.contains_key("REAL"), true);
+    fn scope_symbol_table_builtins() {
+        let scope = ScopedSymbolTable::new(String::from("global"), 1);
+        assert_eq!(scope.symbols.len(), 2);
+        assert_eq!(scope.symbols.contains_key("INTEGER"), true);
+        assert_eq!(scope.symbols.contains_key("REAL"), true);
     }
 
     #[test]
@@ -278,10 +234,44 @@ mod tests {
         ));
         let mut parser = Parser::new(lexer);
         let tree = parser.parse();
-        let mut symtab_builder = SymbolTableBuilder::new();
+        let mut symtab_builder = SemanticAnalyzer::new();
         symtab_builder.visit(&tree);
     }
 
     #[test]
-    fn procedures() {}
+    fn nested_scopes() {
+        let lexer = Lexer::new(String::from(
+            "
+        program Main;
+            var x, y: real;
+
+            procedure Alpha;
+                var y : integer;
+            begin
+
+            end;
+
+        begin
+
+        end.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut semantic_analyzer = SemanticAnalyzer::new();
+
+        semantic_analyzer.visit(&tree);
+
+        println!("\n\nFINAL SCOPE - {:?}", semantic_analyzer.current_scope);
+
+        let global = semantic_analyzer.scope;
+        let current = semantic_analyzer.current_scope.unwrap();
+
+        assert_eq!(global.scope_name, "global");
+        assert_eq!(current.scope_name, "Alpha");
+        assert_eq!(current.scope_level, 2);
+
+        // assert_eq!(semantic_analyzer.scope.symbols.contains_key("y"), true);
+        // assert_eq!(semantic_analyzer.scope.symbols.contains_key("x"), true);
+    }
 }

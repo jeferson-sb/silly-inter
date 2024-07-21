@@ -70,6 +70,13 @@ pub struct Assign {
 pub struct ProcedureDecl {
     pub proc_name: String,
     pub block_node: AST,
+    pub params: Vec<Param>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub var_node: AST,
+    pub type_node: AST,
 }
 
 #[derive(Debug, Clone)]
@@ -85,5 +92,6 @@ pub enum AST {
     VarDecl(Box<VarDecl>),
     ProcedureDecl(Box<ProcedureDecl>),
     Type(Box<Type>),
+    Param(Box<Param>),
     NoOp(Box<NoOp>),
 }

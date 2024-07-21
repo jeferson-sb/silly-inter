@@ -240,6 +240,7 @@ impl Parser {
             let proc_decl = ProcedureDecl {
                 proc_name: proc_name.value.unwrap(),
                 block_node,
+                params: vec![],
             };
             declarations.push(AST::ProcedureDecl(Box::new(proc_decl)));
             self.eat(TokenType::SEMI);

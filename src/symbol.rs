@@ -1,5 +1,9 @@
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
+use std::thread::Scope;
 
 use crate::ast::*;
 use crate::interpr::NodeVisitor;
@@ -43,7 +47,7 @@ impl SymbolTrait for BuiltinTypeSymbol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarSymbol {
     pub name: String,
     pub var_type: Rc<dyn SymbolTrait>,
@@ -61,15 +65,38 @@ impl SymbolTrait for VarSymbol {
     }
 }
 
-#[derive(Debug)]
-pub struct SymbolTable {
-    pub symbols: HashMap<String, Rc<dyn SymbolTrait>>,
+#[derive(Debug, Clone)]
+pub struct ProcedureSymbol {
+    pub name: String,
+    pub params: Vec<VarSymbol>,
 }
 
-impl SymbolTable {
-    pub fn new() -> Self {
-        let mut st = SymbolTable {
+impl ProcedureSymbol {
+    pub fn new(name: String, params: Vec<VarSymbol>) -> Self {
+        ProcedureSymbol { name, params }
+    }
+}
+
+impl SymbolTrait for ProcedureSymbol {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Debug)]
+pub struct ScopedSymbolTable {
+    pub symbols: HashMap<String, Rc<dyn SymbolTrait>>,
+    pub scope_name: String,
+    pub scope_level: i32,
+    // pub enclosing_scope: Option<ScopedSymbolTable>,
+}
+
+impl ScopedSymbolTable {
+    pub fn new(scope_name: String, scope_level: i32) -> Self {
+        let mut st = ScopedSymbolTable {
             symbols: HashMap::new(),
+            scope_name,
+            scope_level,
         };
         st.init_builtins();
         st
@@ -91,15 +118,16 @@ impl SymbolTable {
     }
 }
 
-pub struct SymbolTableBuilder {
-    pub symtab: SymbolTable,
+pub struct SemanticAnalyzer {
+    pub scope: ScopedSymbolTable,
+    pub current_scope: Option<ScopedSymbolTable>,
 }
 
-// SemanticAnalyzer
-impl SymbolTableBuilder {
+impl SemanticAnalyzer {
     pub fn new() -> Self {
-        SymbolTableBuilder {
-            symtab: SymbolTable::new(),
+        SemanticAnalyzer {
+            scope: ScopedSymbolTable::new(String::from("global"), 1),
+            current_scope: None,
         }
     }
 
@@ -111,7 +139,11 @@ impl SymbolTableBuilder {
     }
 
     pub fn visit_program(&mut self, node: &Program) -> i64 {
+        let global_scope = ScopedSymbolTable::new(String::from("global"), 1);
+        self.current_scope = Some(global_scope);
         self.visit(&node.block)
+
+        // TODO: Scope chaining
     }
 
     // TODO: Work with other types than i64
@@ -139,7 +171,9 @@ impl SymbolTableBuilder {
         };
 
         let type_symbol = self
-            .symtab
+            .current_scope
+            .as_ref()
+            .unwrap()
             .lookup(&type_name.value)
             .expect("Type not found");
 
@@ -150,20 +184,28 @@ impl SymbolTableBuilder {
         };
 
         let var_symbol = VarSymbol::new(var_name.value, type_symbol);
-        self.symtab.define(Rc::new(var_symbol));
+        self.current_scope
+            .as_mut()
+            .unwrap()
+            .define(Rc::new(var_symbol));
         0
     }
 
     pub fn visit_var(&self, node: &Var) -> i64 {
         let var_name = &node.value;
-        let var_symbol = self.symtab.lookup(&var_name).expect("Symbol not found");
+        let var_symbol = self
+            .current_scope
+            .as_ref()
+            .unwrap()
+            .lookup(&var_name)
+            .expect("Symbol not found");
         0
     }
 
     pub fn visit_assign(&mut self, node: &Assign) -> i64 {
         if let AST::Var(var) = &node.left {
             let var_name = var.token.value.as_ref().unwrap();
-            let var_symbol = self.symtab.lookup(&var_name);
+            let var_symbol = self.current_scope.as_ref().unwrap().lookup(&var_name);
             self.visit(&node.right);
         } else {
             panic!("AssignmentError: Left side of assignment is not a variable");
@@ -183,13 +225,55 @@ impl SymbolTableBuilder {
         0
     }
 
-    pub fn visit_proceduredecl(&self, node: &ProcedureDecl) -> i64 {
-        0
+    pub fn visit_proceduredecl(&mut self, node: &ProcedureDecl) -> i64 {
+        let proc_name = &node.proc_name;
+        let mut proc_symbol = ProcedureSymbol::new(proc_name.to_string(), vec![]);
+        self.current_scope
+            .as_mut()
+            .unwrap()
+            .define(Rc::new(proc_symbol.clone()));
+
+        println!("BEFORE CREATING PROCEDURE SCOPE {:?}", self.current_scope);
+        println!("ENTER scope: {}", &proc_name);
+
+        // Scope for params and local variables
+        let procedure_scope = ScopedSymbolTable::new(proc_name.to_string(), 2);
+        // THE ISSUE OF THE ALPHA NOT BEING GLOBAL SCOPE IS HERE!
+        self.current_scope = Some(procedure_scope);
+
+        for param in &node.params {
+            let type_name = if let AST::Type(ref value) = param.type_node {
+                value.clone()
+            } else {
+                panic!("Expected Type node");
+            };
+            let var_name = if let AST::Var(ref value) = param.var_node {
+                value.clone()
+            } else {
+                panic!("Expected Var node");
+            };
+
+            let param_type = self
+                .current_scope
+                .as_ref()
+                .unwrap()
+                .lookup(&type_name.value);
+            let param_name = var_name.value;
+            let var_symbol = VarSymbol::new(param_name, param_type.unwrap());
+            self.current_scope
+                .as_mut()
+                .unwrap()
+                .define(Rc::new(var_symbol.clone()));
+
+            proc_symbol.params.push(var_symbol);
+        }
+
+        self.visit(&node.block_node)
     }
 }
 
 // Tree-walking
-impl NodeVisitor for SymbolTableBuilder {
+impl NodeVisitor for SemanticAnalyzer {
     fn visit(&mut self, node: &AST) -> i64 {
         match node {
             AST::Program(prog) => self.visit_program(prog),
@@ -204,6 +288,7 @@ impl NodeVisitor for SymbolTableBuilder {
             AST::ProcedureDecl(proc_decl) => self.visit_proceduredecl(proc_decl),
             AST::Type(type_spec) => self.visit_type(type_spec),
             AST::Compound(compound) => self.visit_compound(compound),
+            AST::Param(_) => todo!(),
         }
     }
 }
