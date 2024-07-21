@@ -238,7 +238,6 @@ impl SemanticAnalyzer {
 
         // Scope for params and local variables
         let procedure_scope = ScopedSymbolTable::new(proc_name.to_string(), 2);
-        // THE ISSUE OF THE ALPHA NOT BEING GLOBAL SCOPE IS HERE!
         self.current_scope = Some(procedure_scope);
 
         for param in &node.params {
