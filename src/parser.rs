@@ -221,7 +221,7 @@ impl Parser {
     pub fn declarations(&mut self) -> Vec<AST> {
         let mut declarations = Vec::new();
 
-        if self.current_token.token_type == TokenType::VAR {
+        while self.current_token.token_type == TokenType::VAR {
             self.eat(TokenType::VAR);
 
             while self.current_token.token_type == TokenType::ID {
@@ -235,18 +235,71 @@ impl Parser {
             self.eat(TokenType::PROCEDURE);
             let proc_name = self.current_token.clone();
             self.eat(TokenType::ID);
+            let mut params = Vec::new();
+
+            if self.current_token.token_type == TokenType::LPAREN {
+                self.eat(TokenType::LPAREN);
+                params = self.formal_parameter_list();
+                self.eat(TokenType::RPAREN);
+            }
+
             self.eat(TokenType::SEMI);
             let block_node = self.block();
             let proc_decl = ProcedureDecl {
                 proc_name: proc_name.value.unwrap(),
                 block_node,
-                params: vec![],
+                params,
             };
             declarations.push(AST::ProcedureDecl(Box::new(proc_decl)));
             self.eat(TokenType::SEMI);
         }
 
         declarations
+    }
+
+    // Collect and return list parameter tokens (id comma type)
+    pub fn formal_parameters(&mut self) -> Vec<Param> {
+        let mut param_nodes = Vec::new();
+        let mut param_tokens = vec![self.current_token.clone()];
+        self.eat(TokenType::ID);
+
+        while self.current_token.token_type == TokenType::COMMA {
+            self.eat(TokenType::COMMA);
+            param_tokens.push(self.current_token.clone());
+            self.eat(TokenType::ID);
+        }
+
+        self.eat(TokenType::COLON);
+        let type_node = self.type_spec();
+
+        for param_token in param_tokens {
+            let param_node = Param {
+                var_node: Var {
+                    token: param_token.clone(),
+                    value: param_token.value.unwrap(),
+                },
+                type_node: type_node.clone(),
+            };
+            param_nodes.push(param_node);
+        }
+
+        param_nodes
+    }
+
+    // Handle list of parameters such as foo: type; bar: type
+    pub fn formal_parameter_list(&mut self) -> Vec<Param> {
+        if self.current_token.token_type != TokenType::ID {
+            return Vec::new();
+        }
+
+        let mut param_nodes = self.formal_parameters();
+
+        while self.current_token.token_type == TokenType::SEMI {
+            self.eat(TokenType::SEMI);
+            param_nodes.extend(self.formal_parameters())
+        }
+
+        param_nodes
     }
 
     /// variable_declaration : ID (COMMA ID)* COLON type_spec

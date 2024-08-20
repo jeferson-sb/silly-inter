@@ -1,9 +1,6 @@
-use std::borrow::Borrow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
-use std::thread::Scope;
 
 use crate::ast::*;
 use crate::interpr::NodeVisitor;
@@ -88,15 +85,21 @@ pub struct ScopedSymbolTable {
     pub symbols: HashMap<String, Rc<dyn SymbolTrait>>,
     pub scope_name: String,
     pub scope_level: i32,
-    // pub enclosing_scope: Option<ScopedSymbolTable>,
+    pub enclosing_scope: Box<Option<ScopedSymbolTable>>,
 }
 
 impl ScopedSymbolTable {
-    pub fn new(scope_name: String, scope_level: i32) -> Self {
+    pub fn new(
+        scope_name: String,
+        scope_level: i32,
+        enclosing_scope: Option<ScopedSymbolTable>,
+    ) -> Self {
+        println!("\x1b[35mNEW SCOPE {}\x1b[0m", scope_name);
         let mut st = ScopedSymbolTable {
             symbols: HashMap::new(),
             scope_name,
             scope_level,
+            enclosing_scope: Box::new(enclosing_scope),
         };
         st.init_builtins();
         st
@@ -110,23 +113,39 @@ impl ScopedSymbolTable {
     }
 
     pub fn define(&mut self, symbol: Rc<dyn SymbolTrait>) {
+        println!("\x1b[35mINSERT {}\x1b[0m", symbol.name());
         self.symbols.insert(symbol.name().to_string(), symbol);
     }
 
-    pub fn lookup(&self, name: &str) -> Option<Rc<dyn SymbolTrait>> {
-        self.symbols.get(name).cloned()
+    pub fn lookup(&self, name: &str, current_scope_only: bool) -> Option<Rc<dyn SymbolTrait>> {
+        println!("\x1b[35mLOOKUP {}\x1b[0m", name);
+        // Try to find the symbol in the current scope
+        if let Some(symbol) = self.symbols.get(name) {
+            return Some(symbol.clone());
+        }
+
+        if current_scope_only {
+            return None;
+        }
+
+        // Recursively look up in the enclosing scope
+        if let Some(ref enclosing_scope) = *self.enclosing_scope {
+            return enclosing_scope.lookup(name, current_scope_only);
+        }
+
+        None
     }
 }
 
+#[derive(Debug)]
 pub struct SemanticAnalyzer {
-    pub scope: ScopedSymbolTable,
+    // tree pointer
     pub current_scope: Option<ScopedSymbolTable>,
 }
 
 impl SemanticAnalyzer {
     pub fn new() -> Self {
         SemanticAnalyzer {
-            scope: ScopedSymbolTable::new(String::from("global"), 1),
             current_scope: None,
         }
     }
@@ -139,11 +158,16 @@ impl SemanticAnalyzer {
     }
 
     pub fn visit_program(&mut self, node: &Program) -> i64 {
-        let global_scope = ScopedSymbolTable::new(String::from("global"), 1);
+        println!("\x1b[35m(GLOBAL SCOPE)\x1b[0m");
+        let global_scope =
+            ScopedSymbolTable::new(String::from("global"), 1, self.current_scope.take());
         self.current_scope = Some(global_scope);
-        self.visit(&node.block)
+        self.visit(&node.block);
 
-        // TODO: Scope chaining
+        // Restore scope after visiting all blocks in the program
+        // self.current_scope = *self.current_scope.take().unwrap().enclosing_scope;
+        println!("\x1b[35m(END GLOBAL SCOPE)\x1b[0m");
+        0
     }
 
     // TODO: Work with other types than i64
@@ -174,7 +198,7 @@ impl SemanticAnalyzer {
             .current_scope
             .as_ref()
             .unwrap()
-            .lookup(&type_name.value)
+            .lookup(&type_name.value, true)
             .expect("Type not found");
 
         let var_name = if let AST::Var(ref value) = node.var_node {
@@ -197,15 +221,13 @@ impl SemanticAnalyzer {
             .current_scope
             .as_ref()
             .unwrap()
-            .lookup(&var_name)
+            .lookup(&var_name, false)
             .expect("Symbol not found");
         0
     }
 
     pub fn visit_assign(&mut self, node: &Assign) -> i64 {
         if let AST::Var(var) = &node.left {
-            let var_name = var.token.value.as_ref().unwrap();
-            let var_symbol = self.current_scope.as_ref().unwrap().lookup(&var_name);
             self.visit(&node.right);
         } else {
             panic!("AssignmentError: Left side of assignment is not a variable");
@@ -233,11 +255,16 @@ impl SemanticAnalyzer {
             .unwrap()
             .define(Rc::new(proc_symbol.clone()));
 
-        println!("BEFORE CREATING PROCEDURE SCOPE {:?}", self.current_scope);
-        println!("ENTER scope: {}", &proc_name);
+        println!("\x1b[35m(ENTER SCOPE {})\x1b[0m", proc_name);
 
         // Scope for params and local variables
-        let procedure_scope = ScopedSymbolTable::new(proc_name.to_string(), 2);
+        let procedure_scope = ScopedSymbolTable::new(
+            proc_name.to_string(),
+            self.current_scope.as_ref().unwrap().scope_level + 1,
+            self.current_scope.take(),
+        );
+
+        // new scope
         self.current_scope = Some(procedure_scope);
 
         for param in &node.params {
@@ -246,19 +273,14 @@ impl SemanticAnalyzer {
             } else {
                 panic!("Expected Type node");
             };
-            let var_name = if let AST::Var(ref value) = param.var_node {
-                value.clone()
-            } else {
-                panic!("Expected Var node");
-            };
+            let var_name = param.var_node.clone();
 
             let param_type = self
                 .current_scope
                 .as_ref()
                 .unwrap()
-                .lookup(&type_name.value);
-            let param_name = var_name.value;
-            let var_symbol = VarSymbol::new(param_name, param_type.unwrap());
+                .lookup(&type_name.value, false);
+            let var_symbol = VarSymbol::new(var_name.value, param_type.unwrap());
             self.current_scope
                 .as_mut()
                 .unwrap()
@@ -267,7 +289,12 @@ impl SemanticAnalyzer {
             proc_symbol.params.push(var_symbol);
         }
 
-        self.visit(&node.block_node)
+        self.visit(&node.block_node);
+
+        // restore scope
+        // self.current_scope = *self.current_scope.take().unwrap().enclosing_scope;
+        println!("\x1b[35m(LEAVE SCOPE {})\x1b[0m", proc_name);
+        0
     }
 }
 

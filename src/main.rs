@@ -16,7 +16,38 @@ mod parser;
 mod symbol;
 mod token;
 
-fn main() {}
+fn main() {
+    let lexer = Lexer::new(String::from(
+        "
+        program Main;
+            var x, y: real;
+
+            procedure Alpha(a : integer);
+                var y : integer;
+                var m : real;
+            begin
+                x := a + x + y;
+            end;
+        begin
+
+        end.
+        ",
+    ));
+    let mut parser = Parser::new(lexer);
+    let tree = parser.parse();
+    let mut semantic_analyzer = SemanticAnalyzer::new();
+    semantic_analyzer.visit(&tree);
+
+    let scope_tree = semantic_analyzer.current_scope.unwrap();
+
+    println!("--------------- MAIN ---------------");
+    println!(
+        "SCOPE_NAME={}, SCOPE_LEVEL={} \n",
+        scope_tree.scope_name, scope_tree.scope_level
+    );
+    println!("SYMBOLS {:?} \n", scope_tree.symbols);
+    println!("ENCLOSING_SCOPE {:?} \n", scope_tree.enclosing_scope);
+}
 
 mod tests {
     use crate::token::{Token, TokenType};
@@ -144,26 +175,28 @@ mod tests {
     #[ignore]
     fn parse_compound_statement() {}
 
-    // #[test]
-    // fn parse_types() {
-    //     let lexer = Lexer::new(String::from(
-    //         "
-    //     PROGRAM Part11;
-    //     VAR
-    //         x : INTEGER;
-    //         y : REAL;
+    #[test]
+    fn parse_types() {
+        let lexer = Lexer::new(String::from(
+            "
+        PROGRAM Part11;
+        VAR
+            x : INTEGER;
+            y : REAL;
 
-    //     BEGIN
+        BEGIN
 
-    //     END.
-    //     ",
-    //     ));
-    //     let mut parser = Parser::new(lexer);
-    //     let tree = parser.parse();
-    //     let mut symtab_builder = SemanticAnalyzer::new();
-    //     symtab_builder.visit(&tree);
-    //     assert_eq!(symtab_builder.scope.symbols.len(), 4);
-    // }
+        END.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut semantic_analyzer = SemanticAnalyzer::new();
+        semantic_analyzer.visit(&tree);
+        // 2 variables, 2 types
+        assert_eq!(semantic_analyzer.current_scope.unwrap().symbols.len(), 4);
+    }
+
     #[test]
     fn parse_variables_in_global_scope() {
         let lexer = Lexer::new(String::from(
@@ -190,7 +223,7 @@ mod tests {
 
     #[test]
     fn define_a_symbol() {
-        let mut scope = ScopedSymbolTable::new(String::from("global"), 1);
+        let mut scope = ScopedSymbolTable::new(String::from("global"), 1, None);
         let int_type = Symbol::new(String::from("INTEGER"), None);
         scope.define(Rc::new(int_type));
 
@@ -200,7 +233,7 @@ mod tests {
 
     #[test]
     fn define_a_variable_symbol() {
-        let mut scope = ScopedSymbolTable::new(String::from("global"), 1);
+        let mut scope = ScopedSymbolTable::new(String::from("global"), 1, None);
         let real_type = Rc::new(BuiltinTypeSymbol::new(String::from("REAL")));
         scope.define(real_type.clone());
         let var_sym = VarSymbol::new(String::from("y"), real_type);
@@ -212,7 +245,7 @@ mod tests {
 
     #[test]
     fn scope_symbol_table_builtins() {
-        let scope = ScopedSymbolTable::new(String::from("global"), 1);
+        let scope = ScopedSymbolTable::new(String::from("global"), 1, None);
         assert_eq!(scope.symbols.len(), 2);
         assert_eq!(scope.symbols.contains_key("INTEGER"), true);
         assert_eq!(scope.symbols.contains_key("REAL"), true);
@@ -262,16 +295,61 @@ mod tests {
 
         semantic_analyzer.visit(&tree);
 
-        println!("\n\nFINAL SCOPE - {:?}", semantic_analyzer.current_scope);
-
-        let global = semantic_analyzer.scope;
         let current = semantic_analyzer.current_scope.unwrap();
 
-        assert_eq!(global.scope_name, "global");
         assert_eq!(current.scope_name, "Alpha");
         assert_eq!(current.scope_level, 2);
+    }
 
-        // assert_eq!(semantic_analyzer.scope.symbols.contains_key("y"), true);
-        // assert_eq!(semantic_analyzer.scope.symbols.contains_key("x"), true);
+    #[test]
+    fn parse_nested_scope_vars() {
+        let lexer = Lexer::new(String::from(
+            "
+        program Main;
+            var x, y: real;
+
+            procedure Alpha(a : integer);
+                var y : integer;
+            begin
+                x := a + x + y;
+            end;
+
+        begin
+
+        end.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut semantic_analyzer = SemanticAnalyzer::new();
+        semantic_analyzer.visit(&tree);
+
+        let scope_tree = semantic_analyzer.current_scope.unwrap();
+        assert_eq!(scope_tree.symbols.contains_key("a"), true);
+        assert_eq!(scope_tree.symbols.contains_key("y"), true);
+    }
+
+    #[test]
+    #[should_panic]
+    fn nested_scope_with_undefined_vars() {
+        let lexer = Lexer::new(String::from(
+            "
+        program Main;
+            var x, y: real;
+
+            procedure Alpha(a : integer);
+                var y : integer;
+            begin
+                x := b + x + y;
+            end;
+        begin
+
+        end.
+        ",
+        ));
+        let mut parser = Parser::new(lexer);
+        let tree = parser.parse();
+        let mut semantic_analyzer = SemanticAnalyzer::new();
+        semantic_analyzer.visit(&tree);
     }
 }

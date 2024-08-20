@@ -75,7 +75,7 @@ pub struct ProcedureDecl {
 
 #[derive(Debug, Clone)]
 pub struct Param {
-    pub var_node: AST,
+    pub var_node: Var,
     pub type_node: AST,
 }
 
